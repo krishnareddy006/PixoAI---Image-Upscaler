@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  clerkId       String    @unique
+  email         String    @unique
+  credits       Int       @default(10)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  transactions  Transaction[]
+  upscales      Upscale[]
+}
+
+model Transaction {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeSessionId String    @unique
+  amount          Int
+  credits         Int
+  status          String    @default("pending")
+  createdAt       DateTime  @default(now())
+}
+
+model Upscale {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  originalImage   String
+  upscaledImage   String
+  scaleFactor     Int
+  creditsUsed     Int       @default(1)
+  createdAt       DateTime  @default(now())
+}
