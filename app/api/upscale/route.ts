@@ -182,7 +182,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const scaleFactor = parseInt(scaleFactorStr);
+    const scaleFactor = parseInt(scaleFactorStr, 10);
     if (![2, 4].includes(scaleFactor)) {
       return NextResponse.json(
         { error: "Scale factor must be 2 or 4" },
@@ -216,7 +216,7 @@ export async function POST(req: Request) {
 
     console.log("🚀 Starting upscale...");
 
-    // Upscale the image (returns Buffer)
+    // Upscale the image
     const upscaledBuffer = await upscaleImage(buffer, scaleFactor as 2 | 4);
 
     console.log("✅ Upscale complete, deducting credit...");
@@ -229,14 +229,8 @@ export async function POST(req: Request) {
 
     console.log(`✅ Credit deducted. Remaining: ${user.credits - 1}`);
 
-    // Convert Node Buffer -> ArrayBuffer that NextResponse accepts
-    const body = upscaledBuffer.buffer.slice(
-      upscaledBuffer.byteOffset,
-      upscaledBuffer.byteOffset + upscaledBuffer.byteLength
-    );
-
-    // Return the upscaled image
-    return new NextResponse(body, {
+    // Return the upscaled image (use Uint8Array so it matches BodyInit)
+    return new NextResponse(new Uint8Array(upscaledBuffer), {
       status: 200,
       headers: {
         "Content-Type": "image/png",
