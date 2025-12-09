@@ -3,7 +3,12 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+// Explicitly type Stripe with the version your SDK supports
+type StripeApiVersion = "2025-02-24.acacia";
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2025-02-24.acacia" as StripeApiVersion,
+});
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
 
