@@ -30,7 +30,8 @@ The application is designed as a full-stack Next.js (App Router) SaaS-style prod
 | Payments          | Stripe                         | Reliable payments and easy integration for credit purchases      |
 | Styling           | Tailwind CSS                   | Rapid styling and consistent design system                       |
 | Image Processing  | Sharp                          | Resizing images server-side and enforcing size limits            |
-| Deployment        | Vercel                         | First-class support for Next.js and serverless API routes        |
+| Deployment        | Render                         | Easy deployment for Node.js/Express apps with web services       |
+
 
 ---
 
