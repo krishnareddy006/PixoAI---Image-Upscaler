@@ -13,12 +13,14 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^5.0.0",
+    "@fal-ai/serverless-client": "^0.15.0",
     "@prisma/client": "^5.22.0",
     "@stripe/react-stripe-js": "^2.8.0",
     "@stripe/stripe-js": "^4.10.0",
     "axios": "^1.13.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
+    "dodopayments": "^2.8.0",
     "form-data": "^4.0.5",
     "lucide-react": "^0.556.0",
     "next": "^14.2.0",
@@ -27,7 +29,7 @@
     "react-dom": "^18.3.0",
     "react-hot-toast": "^2.4.1",
     "sharp": "^0.33.5",
-    "stripe": "^17.7.0",
+    "standardwebhooks": "^1.0.0",
     "svix": "^1.82.0",
     "tailwind-merge": "^2.5.4",
     "zustand": "^5.0.2"
