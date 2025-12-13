@@ -29,8 +29,11 @@ export async function upscaleImage(
       imageSize: imageBuffer.length,
     });
 
-    // Upload image to Fal.ai storage first
-    const imageUrl = await fal.storage.upload(imageBuffer);
+    // ✅ FIX: Convert Buffer to Blob for Node.js environment
+    const blob = new Blob([imageBuffer], { type: "image/png" });
+    
+    // Upload image to Fal.ai storage
+    const imageUrl = await fal.storage.upload(blob);
     
     console.log("📤 Image uploaded to Fal.ai storage:", imageUrl.substring(0, 50) + "...");
 
@@ -95,3 +98,4 @@ export async function upscaleImage(
     );
   }
 }
+
