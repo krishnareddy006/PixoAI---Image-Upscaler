@@ -278,15 +278,14 @@ export async function POST(req: Request) {
       "webhook-timestamp": headersList.get("webhook-timestamp") || "",
     };
 
-    console.log("📨 Webhook received headers:", webhookHeaders);
+    console.log("📨 Webhook received");
 
     // 1) Verify signature
-    let verifiedPayload: any;
     try {
-      verifiedPayload = webhook.verify(body, webhookHeaders);
-      console.log("✅ Webhook signature verified");
+      await webhook.verify(body, webhookHeaders);
+      console.log("✅ Signature verified");
     } catch (err: any) {
-      console.error("❌ Webhook signature verification failed:", err.message);
+      console.error("❌ Signature verification failed:", err.message);
       return NextResponse.json(
         { error: "Invalid signature" },
         { status: 401 }
@@ -295,50 +294,65 @@ export async function POST(req: Request) {
 
     // 2) Parse event
     const event = JSON.parse(body);
-    console.log("📦 Full webhook event:", JSON.stringify(event, null, 2));
+    console.log("📦 FULL WEBHOOK EVENT:", JSON.stringify(event, null, 2));
 
     const eventType = event.type;
     console.log("📌 Event type:", eventType);
 
-    // 3) ✅ CORRECT: Access data directly from event.data
+    // 3) Extract data
     const paymentId = event.data?.payment_id || event.data?.id;
-    const status = event.data?.status;
     const metadata = event.data?.metadata || {};
     
-    console.log("🔍 Parsed webhook data:", {
+    console.log("🔍 Extracted data:", {
       paymentId,
-      status,
       metadata,
-      fullData: event.data,
+      eventDataKeys: Object.keys(event.data || {}),
     });
 
     const userId = metadata?.userId;
     const creditsStr = metadata?.credits;
 
-    // 4) Handle successful payments
+    // 4) Handle payment.succeeded
     if (eventType === "payment.succeeded") {
-      console.log("💰 Processing payment.succeeded event");
+      console.log("💰 Processing payment.succeeded");
+
+      // ✅ DETAILED VALIDATION LOGS
+      console.log("🔎 Validation check:", {
+        hasPaymentId: !!paymentId,
+        paymentId,
+        hasUserId: !!userId,
+        userId,
+        hasCreditsStr: !!creditsStr,
+        creditsStr,
+        creditsStrType: typeof creditsStr,
+      });
 
       if (!paymentId) {
-        console.error("❌ Missing payment_id in webhook payload");
-        console.error("Full event.data:", event.data);
+        console.error("❌ Missing payment_id");
         return NextResponse.json(
-          { error: "Missing payment_id in payload" },
+          { error: "Missing payment_id" },
           { status: 400 }
         );
       }
 
       if (!userId || !creditsStr) {
-        console.error("❌ Missing metadata:", { userId, creditsStr, metadata });
+        console.error("❌ Missing userId or credits in metadata");
         return NextResponse.json(
-          { error: "Missing userId or credits in metadata" },
+          { error: "Missing userId or credits" },
           { status: 400 }
         );
       }
 
       const credits = parseInt(creditsStr, 10);
+      console.log("🔢 Parsed credits:", {
+        original: creditsStr,
+        parsed: credits,
+        isNaN: Number.isNaN(credits),
+        type: typeof credits,
+      });
+
       if (Number.isNaN(credits) || credits <= 0) {
-        console.error("❌ Invalid credits value:", creditsStr);
+        console.error("❌ Invalid credits value");
         return NextResponse.json(
           { error: "Invalid credits value" },
           { status: 400 }
@@ -346,38 +360,72 @@ export async function POST(req: Request) {
       }
 
       try {
-        // Update transaction status (if exists)
+        // ✅ CHECK USER EXISTS FIRST
+        const userBefore = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { id: true, email: true, credits: true },
+        });
+
+        console.log("👤 User before update:", userBefore);
+
+        if (!userBefore) {
+          console.error("❌ User not found:", userId);
+          return NextResponse.json(
+            { error: "User not found" },
+            { status: 404 }
+          );
+        }
+
+        // Update transaction
         const tx = await prisma.transaction.updateMany({
           where: { dodoPaymentId: paymentId },
           data: { status: "completed" },
         });
 
-        console.log("🧾 Transaction update result:", {
-          matched: tx.count,
-          dodoPaymentId: paymentId,
+        console.log("🧾 Transaction updated:", {
+          count: tx.count,
+          paymentId,
         });
 
-        // Increment user credits
+        // ✅ INCREMENT CREDITS
+        console.log(`💳 Attempting to add ${credits} credits to user ${userId}`);
+        console.log(`Current balance: ${userBefore.credits}`);
+
         const updatedUser = await prisma.user.update({
           where: { id: userId },
           data: {
             credits: {
-              increment: credits,
+              increment: credits, // ✅ CORRECT - credits is already a number
             },
           },
         });
 
-        console.log(`✅ Successfully added ${credits} credits to user ${userId}`);
-        console.log(`💰 New credit balance: ${updatedUser.credits}`);
+        console.log("✅ Credits updated successfully!");
+        console.log("📊 Update result:", {
+          userId: updatedUser.id,
+          email: updatedUser.email,
+          previousBalance: userBefore.credits,
+          creditsAdded: credits,
+          newBalance: updatedUser.credits,
+          difference: updatedUser.credits - userBefore.credits,
+        });
 
         return NextResponse.json({
           received: true,
           success: true,
           creditsAdded: credits,
+          previousBalance: userBefore.credits,
           newBalance: updatedUser.credits,
         });
       } catch (error: any) {
-        console.error("❌ Database error while updating credits:", error);
+        console.error("❌ Database error:", {
+          name: error.name,
+          message: error.message,
+          code: error.code,
+          meta: error.meta,
+          stack: error.stack,
+        });
+        
         return NextResponse.json(
           { error: "Failed to update credits", details: error.message },
           { status: 500 }
@@ -387,22 +435,24 @@ export async function POST(req: Request) {
 
     // 5) Handle failed payments
     if (eventType === "payment.failed") {
-      console.log("❌ Processing payment.failed event");
+      console.log("❌ Payment failed:", paymentId);
       if (paymentId) {
         await prisma.transaction.updateMany({
           where: { dodoPaymentId: paymentId },
           data: { status: "failed" },
         });
-        console.log(`Failed payment recorded: ${paymentId}`);
       }
     }
 
-    // 6) Default ack for other events
-    console.log("✅ Webhook acknowledged for event:", eventType);
+    // 6) Default ack
     return NextResponse.json({ received: true });
   } catch (error: any) {
-    console.error("❌ Webhook handler error:", error);
-    console.error("Error stack:", error.stack);
+    console.error("❌ Webhook handler error:", {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    });
+    
     return NextResponse.json(
       { error: error.message || "Internal server error" },
       { status: 500 }
