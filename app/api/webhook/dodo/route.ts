@@ -97,6 +97,163 @@
 //   }
 // }
 
+// import { headers } from "next/headers";
+// import { NextResponse } from "next/server";
+// import { Webhook } from "standardwebhooks";
+// import { prisma } from "@/lib/prisma";
+
+// const webhookSecret = process.env.DODO_PAYMENTS_WEBHOOK_SECRET;
+
+// if (!webhookSecret) {
+//   throw new Error("DODO_PAYMENTS_WEBHOOK_SECRET is not defined");
+// }
+
+// const webhook = new Webhook(webhookSecret);
+
+// export async function POST(req: Request) {
+//   try {
+//     const body = await req.text();
+//     const headersList = headers();
+
+//     const webhookHeaders = {
+//       "webhook-id": headersList.get("webhook-id") || "",
+//       "webhook-signature": headersList.get("webhook-signature") || "",
+//       "webhook-timestamp": headersList.get("webhook-timestamp") || "",
+//     };
+
+//     console.log("📨 Webhook received headers:", webhookHeaders);
+
+//     // 1) Verify signature
+//     let verifiedPayload: any;
+//     try {
+//       verifiedPayload = await webhook.verify(body, webhookHeaders);
+//     } catch (err: any) {
+//       console.error("❌ Webhook signature verification failed:", err.message);
+//       return NextResponse.json(
+//         { error: "Invalid signature" },
+//         { status: 401 }
+//       );
+//     }
+
+//     // 2) Parse event
+//     const event = JSON.parse(body);
+//     console.log("✅ Webhook verified. Raw event:", event);
+
+//     const eventType = event.type;
+//     // Dodo docs use names like payment.succeeded / payment.failed.[web:40][web:16]
+//     console.log("📌 Event type:", eventType);
+
+//     // 3) Normalize payment object & metadata based on Dodo webhook shape:
+//     // Example documented shape (simplified): 
+//     // {
+//     //   type: "payment.succeeded",
+//     //   data: {
+//     //     payment: { id, status, ... },
+//     //     customer: { ... },
+//     //     metadata: { userId, credits }
+//     //   }
+//     // }
+//     const payment = event?.data?.payment || event?.data; // fallback if library flattens
+//     const metadata = event?.data?.metadata || payment?.metadata || {};
+
+//     console.log("🧾 Parsed payment:", {
+//       id: payment?.id,
+//       status: payment?.status,
+//       metadata,
+//     });
+
+//     const userId = metadata?.userId;
+//     const creditsStr = metadata?.credits;
+
+//     // 4) Handle successful payments
+//     if (eventType === "payment.succeeded" || eventType === "payment.completed") {
+//       if (!payment?.id) {
+//         console.error("❌ Missing payment.id in webhook payload");
+//         return NextResponse.json(
+//           { error: "Missing payment id in payload" },
+//           { status: 400 }
+//         );
+//       }
+
+//       if (!userId || !creditsStr) {
+//         console.error("❌ Missing metadata userId or credits:", { userId, creditsStr });
+//         return NextResponse.json(
+//           { error: "Missing userId or credits in metadata" },
+//           { status: 400 }
+//         );
+//       }
+
+//       const credits = parseInt(creditsStr, 10);
+//       if (Number.isNaN(credits) || credits <= 0) {
+//         console.error("❌ Invalid credits value in metadata:", creditsStr);
+//         return NextResponse.json(
+//           { error: "Invalid credits value in metadata" },
+//           { status: 400 }
+//         );
+//       }
+
+//       try {
+//         // Mark transaction as completed (if you create it at checkout creation)
+//         const tx = await prisma.transaction.updateMany({
+//           where: { dodoPaymentId: payment.id },
+//           data: { status: "completed" },
+//         });
+
+//         console.log("🧾 Transaction update result:", {
+//           matched: tx.count,
+//           dodoPaymentId: payment.id,
+//         });
+
+//         // Increment user credits
+//         const updatedUser = await prisma.user.update({
+//           where: { id: userId },
+//           data: {
+//             credits: {
+//               increment: credits,
+//             },
+//           },
+//         });
+
+//         console.log(`✅ Added ${credits} credits to user ${userId}`);
+//         console.log(`💰 New credit balance: ${updatedUser.credits}`);
+
+//         return NextResponse.json({
+//           received: true,
+//           creditsAdded: credits,
+//           newBalance: updatedUser.credits,
+//         });
+//       } catch (error: any) {
+//         console.error("❌ Database error while updating credits:", error);
+//         return NextResponse.json(
+//           { error: "Failed to update credits" },
+//           { status: 500 }
+//         );
+//       }
+//     }
+
+//     // 5) Handle failed payments
+//     if (eventType === "payment.failed") {
+//       if (payment?.id) {
+//         console.log("❌ Payment failed:", payment.id);
+//         await prisma.transaction.updateMany({
+//           where: { dodoPaymentId: payment.id },
+//           data: { status: "failed" },
+//         });
+//       }
+//     }
+
+//     // 6) Default ack
+//     return NextResponse.json({ received: true });
+//   } catch (error: any) {
+//     console.error("❌ Webhook handler error:", error);
+//     return NextResponse.json(
+//       { error: error.message || "Internal server error" },
+//       { status: 500 }
+//     );
+//   }
+// }
+
+
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { Webhook } from "standardwebhooks";
@@ -126,7 +283,8 @@ export async function POST(req: Request) {
     // 1) Verify signature
     let verifiedPayload: any;
     try {
-      verifiedPayload = await webhook.verify(body, webhookHeaders);
+      verifiedPayload = webhook.verify(body, webhookHeaders);
+      console.log("✅ Webhook signature verified");
     } catch (err: any) {
       console.error("❌ Webhook signature verification failed:", err.message);
       return NextResponse.json(
@@ -137,46 +295,41 @@ export async function POST(req: Request) {
 
     // 2) Parse event
     const event = JSON.parse(body);
-    console.log("✅ Webhook verified. Raw event:", event);
+    console.log("📦 Full webhook event:", JSON.stringify(event, null, 2));
 
     const eventType = event.type;
-    // Dodo docs use names like payment.succeeded / payment.failed.[web:40][web:16]
     console.log("📌 Event type:", eventType);
 
-    // 3) Normalize payment object & metadata based on Dodo webhook shape:
-    // Example documented shape (simplified): 
-    // {
-    //   type: "payment.succeeded",
-    //   data: {
-    //     payment: { id, status, ... },
-    //     customer: { ... },
-    //     metadata: { userId, credits }
-    //   }
-    // }
-    const payment = event?.data?.payment || event?.data; // fallback if library flattens
-    const metadata = event?.data?.metadata || payment?.metadata || {};
-
-    console.log("🧾 Parsed payment:", {
-      id: payment?.id,
-      status: payment?.status,
+    // 3) ✅ CORRECT: Access data directly from event.data
+    const paymentId = event.data?.payment_id || event.data?.id;
+    const status = event.data?.status;
+    const metadata = event.data?.metadata || {};
+    
+    console.log("🔍 Parsed webhook data:", {
+      paymentId,
+      status,
       metadata,
+      fullData: event.data,
     });
 
     const userId = metadata?.userId;
     const creditsStr = metadata?.credits;
 
     // 4) Handle successful payments
-    if (eventType === "payment.succeeded" || eventType === "payment.completed") {
-      if (!payment?.id) {
-        console.error("❌ Missing payment.id in webhook payload");
+    if (eventType === "payment.succeeded") {
+      console.log("💰 Processing payment.succeeded event");
+
+      if (!paymentId) {
+        console.error("❌ Missing payment_id in webhook payload");
+        console.error("Full event.data:", event.data);
         return NextResponse.json(
-          { error: "Missing payment id in payload" },
+          { error: "Missing payment_id in payload" },
           { status: 400 }
         );
       }
 
       if (!userId || !creditsStr) {
-        console.error("❌ Missing metadata userId or credits:", { userId, creditsStr });
+        console.error("❌ Missing metadata:", { userId, creditsStr, metadata });
         return NextResponse.json(
           { error: "Missing userId or credits in metadata" },
           { status: 400 }
@@ -185,23 +338,23 @@ export async function POST(req: Request) {
 
       const credits = parseInt(creditsStr, 10);
       if (Number.isNaN(credits) || credits <= 0) {
-        console.error("❌ Invalid credits value in metadata:", creditsStr);
+        console.error("❌ Invalid credits value:", creditsStr);
         return NextResponse.json(
-          { error: "Invalid credits value in metadata" },
+          { error: "Invalid credits value" },
           { status: 400 }
         );
       }
 
       try {
-        // Mark transaction as completed (if you create it at checkout creation)
+        // Update transaction status (if exists)
         const tx = await prisma.transaction.updateMany({
-          where: { dodoPaymentId: payment.id },
+          where: { dodoPaymentId: paymentId },
           data: { status: "completed" },
         });
 
         console.log("🧾 Transaction update result:", {
           matched: tx.count,
-          dodoPaymentId: payment.id,
+          dodoPaymentId: paymentId,
         });
 
         // Increment user credits
@@ -214,18 +367,19 @@ export async function POST(req: Request) {
           },
         });
 
-        console.log(`✅ Added ${credits} credits to user ${userId}`);
+        console.log(`✅ Successfully added ${credits} credits to user ${userId}`);
         console.log(`💰 New credit balance: ${updatedUser.credits}`);
 
         return NextResponse.json({
           received: true,
+          success: true,
           creditsAdded: credits,
           newBalance: updatedUser.credits,
         });
       } catch (error: any) {
         console.error("❌ Database error while updating credits:", error);
         return NextResponse.json(
-          { error: "Failed to update credits" },
+          { error: "Failed to update credits", details: error.message },
           { status: 500 }
         );
       }
@@ -233,19 +387,22 @@ export async function POST(req: Request) {
 
     // 5) Handle failed payments
     if (eventType === "payment.failed") {
-      if (payment?.id) {
-        console.log("❌ Payment failed:", payment.id);
+      console.log("❌ Processing payment.failed event");
+      if (paymentId) {
         await prisma.transaction.updateMany({
-          where: { dodoPaymentId: payment.id },
+          where: { dodoPaymentId: paymentId },
           data: { status: "failed" },
         });
+        console.log(`Failed payment recorded: ${paymentId}`);
       }
     }
 
-    // 6) Default ack
+    // 6) Default ack for other events
+    console.log("✅ Webhook acknowledged for event:", eventType);
     return NextResponse.json({ received: true });
   } catch (error: any) {
     console.error("❌ Webhook handler error:", error);
+    console.error("Error stack:", error.stack);
     return NextResponse.json(
       { error: error.message || "Internal server error" },
       { status: 500 }
